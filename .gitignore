@@ -1,0 +1,17 @@
+# Large photo datasets (14,000 images, 673 MB)
+geo_dataset/train/
+geo_dataset/holdout_public/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# System & IDE files
+.DS_Store
+.ipynb_checkpoints/
+*.log
+
+# Scratch scripts
+scratch/
