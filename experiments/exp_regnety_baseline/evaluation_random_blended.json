@@ -1,0 +1,104 @@
+{
+  "median_haversine_km": 138.32,
+  "mean_haversine_km": 567.85,
+  "pct_lt_10km": 13.39,
+  "pct_lt_25km": 29.04,
+  "pct_lt_40km": 37.03,
+  "pct_lt_50km": 40.43,
+  "pct_lt_100km": 47.49,
+  "pct_lt_200km": 54.0,
+  "pct_lt_750km": 72.87,
+  "country_top1_acc": 67.64,
+  "coarse_region_acc": 53.06,
+  "fine_cell_top1_acc": 39.29,
+  "median_when_country_correct_km": 35.18,
+  "median_when_fine_cell_correct_km": 15.04,
+  "fine_cell_oracle_median_km": 23.95,
+  "nearest_training_coord_oracle_km": 3.17,
+  "per_country": {
+    "Belarus": {
+      "samples": 173,
+      "median_km": 25.44,
+      "mean_km": 262.32,
+      "country_acc": 80.92,
+      "pct_lt_200km": 76.3
+    },
+    "Finland": {
+      "samples": 200,
+      "median_km": 37.77,
+      "mean_km": 320.31,
+      "country_acc": 83.5,
+      "pct_lt_200km": 73.0
+    },
+    "France": {
+      "samples": 200,
+      "median_km": 733.6,
+      "mean_km": 875.15,
+      "country_acc": 38.5,
+      "pct_lt_200km": 27.5
+    },
+    "Germany": {
+      "samples": 200,
+      "median_km": 491.67,
+      "mean_km": 660.28,
+      "country_acc": 52.5,
+      "pct_lt_200km": 22.5
+    },
+    "Iceland": {
+      "samples": 192,
+      "median_km": 12.42,
+      "mean_km": 191.45,
+      "country_acc": 95.31,
+      "pct_lt_200km": 88.54
+    },
+    "Italy": {
+      "samples": 200,
+      "median_km": 446.33,
+      "mean_km": 761.43,
+      "country_acc": 55.5,
+      "pct_lt_200km": 42.0
+    },
+    "Norway": {
+      "samples": 200,
+      "median_km": 36.6,
+      "mean_km": 437.98,
+      "country_acc": 75.0,
+      "pct_lt_200km": 69.5
+    },
+    "Poland": {
+      "samples": 187,
+      "median_km": 498.22,
+      "mean_km": 695.54,
+      "country_acc": 47.59,
+      "pct_lt_200km": 35.29
+    },
+    "Spain": {
+      "samples": 200,
+      "median_km": 337.07,
+      "mean_km": 989.52,
+      "country_acc": 59.0,
+      "pct_lt_200km": 46.5
+    },
+    "Sweden": {
+      "samples": 200,
+      "median_km": 157.94,
+      "mean_km": 457.88,
+      "country_acc": 75.0,
+      "pct_lt_200km": 55.5
+    },
+    "Turkey": {
+      "samples": 200,
+      "median_km": 66.31,
+      "mean_km": 711.23,
+      "country_acc": 71.5,
+      "pct_lt_200km": 60.0
+    },
+    "United_Kingdom": {
+      "samples": 200,
+      "median_km": 162.61,
+      "mean_km": 403.12,
+      "country_acc": 79.0,
+      "pct_lt_200km": 54.5
+    }
+  }
+}

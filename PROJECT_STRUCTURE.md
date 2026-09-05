@@ -60,10 +60,10 @@ $$x = \cos(\text{lat}_{\text{rad}}) \cdot \cos(\text{lng}_{\text{rad}})$$
 $$y = \cos(\text{lat}_{\text{rad}}) \cdot \sin(\text{lng}_{\text{rad}})$$
 $$z = \sin(\text{lat}_{\text{rad}})$$
 
-### 3.3 512-Cell Voronoi Spatial Grid (`cluster_centroids.npy`)
-- **Clustering:** K-Means clustering ($K=512$) fitted on 3D spherical Cartesian coordinates of the training set.
-- **Target Cell:** Each photo is assigned to its nearest spatial cell index $c_k \in \{0, \dots, 511\}$ based on 3D Euclidean distance (chord distance).
-- **Oracle Median Distance:** 25.97 km (theoretical lower bound).
+### 3.3 576-Cell Voronoi Spatial Grid (`fine_centroids.npy`)
+- **Clustering:** Balanced country-stratified K-Means clustering (48 fine cells per country, 576 fine cells total) fitted on 3D spherical Cartesian coordinates.
+- **Target Cell:** Each photo is assigned to its nearest spatial cell index $c_k \in \{0, \dots, 575\}$.
+- **Oracle Median Distance:** 23.95 km (theoretical lower bound).
 
 ---
 
@@ -80,48 +80,39 @@ $$z = \sin(\text{lat}_{\text{rad}})$$
    - Learnable exponent parameter $p$ (initialized at $3.0$). Emphasizes salient localized visual features (architectural details, road markings, landscape motifs) over uniform global averaging.
 
 3. **Multi-Task Heads:**
-   - **Cell Head:** `Linear(in_features -> 384) -> BatchNorm1d -> Hardswish -> Dropout(0.2) -> Linear(384 -> 512)`.
-   - **Offset Head:** `Linear(in_features -> 192) -> BatchNorm1d -> Hardswish -> Dropout(0.2) -> Linear(192 -> 2) -> Tanh`. Continuous local coordinate refinement ($\pm 2.0^\circ$).
-   - **Cartesian 3D Head:** `Linear(in_features -> 128) -> BatchNorm1d -> Hardswish -> Linear(128 -> 3) -> L2 Norm`. Unit 3D sphere vector prediction.
-   - **Country Head:** `Linear(in_features -> 192) -> BatchNorm1d -> Hardswish -> Dropout(0.2) -> Linear(192 -> 12)`. Auxiliary country classification supervision.
+   - **Shared Projection:** `Linear(440 -> 384) -> BatchNorm1d -> Hardswish -> Dropout(0.2)`.
+   - **Country Head:** `Linear(384 -> 12)` (12 countries).
+   - **Coarse Head:** `Linear(384 -> 48)` (4 coarse regions per country).
+   - **Fine-Cell Head:** `Linear(384 -> 576)` (48 fine Voronoi cells per country).
+   - **Metric Retrieval Head:** `Linear(384 -> 128)` with L2 normalization.
+   - **Offset Head:** `Linear(384 -> 64) -> Hardswish -> Linear(64 -> 2) -> Tanh` ($\pm 50\text{ km}$ local displacement).
+   - **Cartesian 3D Head:** `Linear(384 -> 64) -> Hardswish -> Linear(64 -> 3) -> L2 Norm`.
 
-- **Total Parameter Count:** **4,500,282 parameters** ($\le 5,000,000$ constraint satisfied).
-
----
-
-## 5. 🎯 Loss Formulation & Spatially-Constrained Decoding (`src/train.py`)
-
-### 5.1 Spatially-Constrained Local Neighborhood Softmax Decoding
-To eliminate cross-continent multimodal spatial averaging failure, logits are masked beyond $R_{\text{local}} = 150\text{ km}$ of the top-1 predicted cell $c^*$:
-$$P(c_k \mid x) = \frac{\exp(z_k / \tau) \cdot \mathbb{I}[d(c_k, c^*) \le R_{\text{local}}]}{\sum_{j} \exp(z_j / \tau) \cdot \mathbb{I}[d(c_j, c^*) \le R_{\text{local}}]}$$
-
-Continuous Tanh offset is scaled by $\cos(\text{lat})$ for longitude:
-$$\hat{\text{lat}} = \text{lat}_{\text{soft}} + \Delta_{\text{lat}} \cdot 2.0^\circ, \quad \hat{\text{lng}} = \text{lng}_{\text{soft}} + \Delta_{\text{lng}} \cdot \frac{2.0^\circ}{\max(\cos(\text{lat}_{\text{soft}}), 0.2)}$$
-
-### 5.2 Multi-Task Training Loss
-$$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{cell}} + 0.3 \cdot \mathcal{L}_{\text{country}} + 1.5 \cdot \mathcal{L}_{\text{focal\_log\_hav}} + 0.5 \cdot \mathcal{L}_{\text{xyz}}$$
-- $\mathcal{L}_{\text{cell}}$: Cross-Entropy Loss with label smoothing ($0.05$).
-- $\mathcal{L}_{\text{country}}$: Cross-Entropy Loss with label smoothing ($0.05$).
-- $\mathcal{L}_{\text{focal\_log\_hav}}$: Focal Log-Haversine distance loss in km: $\left(1 - \exp\left(-\frac{d_{\text{hav}}}{150}\right)\right) \cdot \log\left(1 + \frac{d_{\text{hav}}}{10.0}\right)$.
-- $\mathcal{L}_{\text{xyz}}$: MSE Loss between predicted unit 3D vector $\hat{\mathbf{v}}$ and true vector $\mathbf{v}$.
-
-### 5.3 Optimization & Schedule
-- **Optimizer:** `AdamW(lr=1e-3, weight_decay=1e-4)`.
-- **Epochs:** 120 total.
-- **Scheduler:** 5-epoch linear warmup followed by Cosine Annealing decay down to $10^{-5}$.
+- **Total Parameter Count:** **4,417,002 parameters** ($\le 5,000,000$ constraint satisfied, 582,998 budget remaining).
 
 ---
 
-## 6. 🔮 Inference & Evaluation Pipeline (`src/evaluate.py`)
+## 5. 🎯 Loss Formulation & Training Curriculum (`src/train.py`)
 
-- **10-View Multi-Crop Test-Time Augmentation (TTA):**
-  - Resizes test image to $416 \times 416$.
-  - Extracts 5 spatial crops (`FiveCrop(384)`).
-  - Generates 5 horizontal flips $\rightarrow$ total 10 views per image.
-  - Averages cell logits and continuous offsets across all 10 views before applying Spatially-Constrained Local Neighborhood Softmax.
+### 5.1 Training Budget & Schedule (65 Epochs Total)
+- **Full Curriculum (Phases B + C):** 65 epochs combined:
+  - Phase B (15 epochs): Country and coarse-region hierarchical supervision with boosted focal cross-entropy.
+  - Phase C (50 epochs): Joint multi-task localization with cosine LR decay, cross-border soft neighborhood decoding, and EMA weight averaging.
+- **Optimizer:** `AdamW(backbone_lr=6e-4, head_lr=1.2e-3, weight_decay=1e-4)`.
+- **Scheduler:** Cosine annealing with min LR ratio of 0.05.
+
+---
+
+## 6. 🔮 Inference & Evaluation Pipeline (`src/evaluate.py`, `src/predict.py`)
+
+- **Spherical Decoding Strategies:**
+  - `cell_only`: Soft spherical expectation over top-$k$ Voronoi cell centroids + continuous offset, allowing top-2 predicted countries within local spatial radius.
+  - `retrieval_only`: k-NN metric retrieval from training embeddings database across top-2 predicted countries.
+  - `blended` (Default): Cosine-weighted spherical interpolation between cell prediction and retrieval neighborhood.
 - **Output Submission File (`predictions.csv`):**
   - Header: `filename,pred_lat,pred_lng`
   - Exactly 2,400 rows corresponding to `geo_dataset/holdout_public/`.
+  - Automatic 13-point submission audit verifying strict compliance on both `experiments/` and project root.
 
 ---
 
@@ -129,9 +120,8 @@ $$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{cell}} + 0.3 \cdot \mathcal{L}
 
 Run unit tests via:
 ```bash
-/home/utn/uzis83et/anaconda3/bin/python src/test_geolocation.py
+python run.py --test
+# or
+python src/test_geolocation.py
 ```
-- `test_coordinate_conversion_roundtrip()`: Validates $(\text{lat}, \text{lng}) \leftrightarrow (x, y, z)$ numerical roundtrip precision.
-- `test_haversine_nan_safety()`: Ensures gradient computation near zero distance does not yield `NaN`.
-- `test_model_parameter_constraint_and_shapes()`: Verifies output tensor shapes and checks parameter limit $\le 5,000,000$.
-- `test_spatially_constrained_soft_expectation()`: Verifies stability of Spatially-Constrained Local Neighborhood Softmax.
+- Complete 23-test verification suite covering coordinate math, numerical stability, parameter budget, data transforms, and model heads.

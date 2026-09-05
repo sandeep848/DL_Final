@@ -1,0 +1,41 @@
+{
+  "train_samples": 9406,
+  "val_samples": 2352,
+  "duplicate_filenames_overlap": 0,
+  "missing_train_images": 0,
+  "missing_val_images": 0,
+  "min_train_to_val_distance_km": 0.0,
+  "pct_val_within_10km": 75.94,
+  "pct_val_within_25km": 96.68,
+  "pct_val_within_40km": 99.32,
+  "pct_val_within_50km": 99.87,
+  "pct_val_within_100km": 99.96,
+  "train_per_country": {
+    "Germany": 800,
+    "Sweden": 800,
+    "Finland": 800,
+    "Turkey": 800,
+    "France": 800,
+    "Norway": 800,
+    "Italy": 800,
+    "Spain": 800,
+    "United_Kingdom": 800,
+    "Iceland": 768,
+    "Poland": 747,
+    "Belarus": 691
+  },
+  "val_per_country": {
+    "United_Kingdom": 200,
+    "Finland": 200,
+    "Norway": 200,
+    "Spain": 200,
+    "Sweden": 200,
+    "Italy": 200,
+    "France": 200,
+    "Germany": 200,
+    "Turkey": 200,
+    "Iceland": 192,
+    "Poland": 187,
+    "Belarus": 173
+  }
+}

@@ -15,3 +15,8 @@ __pycache__/
 
 # Scratch scripts
 scratch/
+
+# Intermediate experiment weights (root best_model.pth is tracked for submission)
+experiments/**/*.pth
+experiments/**/*.pt
+*.tmp

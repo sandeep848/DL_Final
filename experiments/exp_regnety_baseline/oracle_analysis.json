@@ -1,0 +1,123 @@
+{
+  "dataset_sizes": {
+    "train": 9406,
+    "val": 2352
+  },
+  "nearest_training_coordinate": {
+    "median_km": 3.17,
+    "mean_km": 6.4,
+    "pct_within_10km": 75.94,
+    "pct_within_25km": 96.68,
+    "pct_within_40km": 99.32,
+    "pct_within_50km": 99.87,
+    "pct_within_100km": 99.96,
+    "pct_within_200km": 100.0
+  },
+  "oracles": {
+    "fine_cell_oracle_median_km": 23.95,
+    "fine_cell_oracle_mean_km": 26.96,
+    "coarse_region_oracle_median_km": 122.31
+  },
+  "cell_population": {
+    "total_fine_cells": 576,
+    "empty_cells": 0,
+    "undersampled_cells_lt5": 14,
+    "min_samples_per_cell": 2,
+    "max_samples_per_cell": 76,
+    "mean_samples_per_cell": 16.3,
+    "median_samples_per_cell": 15.0
+  },
+  "offset_distribution_km": {
+    "p50": 20.46,
+    "p90": 44.01,
+    "p95": 51.65,
+    "max": 109.53
+  },
+  "per_country_stats": {
+    "Belarus": {
+      "val_samples": 173,
+      "median_nearest_km": 1.2,
+      "mean_nearest_km": 2.5,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    },
+    "Finland": {
+      "val_samples": 200,
+      "median_nearest_km": 2.29,
+      "mean_nearest_km": 5.17,
+      "pct_within_40km": 99.5,
+      "pct_within_100km": 100.0
+    },
+    "France": {
+      "val_samples": 200,
+      "median_nearest_km": 11.03,
+      "mean_nearest_km": 12.31,
+      "pct_within_40km": 96.5,
+      "pct_within_100km": 100.0
+    },
+    "Germany": {
+      "val_samples": 200,
+      "median_nearest_km": 8.14,
+      "mean_nearest_km": 9.51,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    },
+    "Iceland": {
+      "val_samples": 192,
+      "median_nearest_km": 0.6,
+      "mean_nearest_km": 1.67,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    },
+    "Italy": {
+      "val_samples": 200,
+      "median_nearest_km": 3.41,
+      "mean_nearest_km": 5.89,
+      "pct_within_40km": 99.5,
+      "pct_within_100km": 100.0
+    },
+    "Norway": {
+      "val_samples": 200,
+      "median_nearest_km": 1.03,
+      "mean_nearest_km": 4.23,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    },
+    "Poland": {
+      "val_samples": 187,
+      "median_nearest_km": 5.32,
+      "mean_nearest_km": 7.04,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    },
+    "Spain": {
+      "val_samples": 200,
+      "median_nearest_km": 3.75,
+      "mean_nearest_km": 7.42,
+      "pct_within_40km": 97.0,
+      "pct_within_100km": 99.5
+    },
+    "Sweden": {
+      "val_samples": 200,
+      "median_nearest_km": 5.53,
+      "mean_nearest_km": 8.93,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    },
+    "Turkey": {
+      "val_samples": 200,
+      "median_nearest_km": 2.55,
+      "mean_nearest_km": 6.0,
+      "pct_within_40km": 99.5,
+      "pct_within_100km": 100.0
+    },
+    "United_Kingdom": {
+      "val_samples": 200,
+      "median_nearest_km": 2.92,
+      "mean_nearest_km": 5.43,
+      "pct_within_40km": 100.0,
+      "pct_within_100km": 100.0
+    }
+  },
+  "stretch_target_under_40km_feasibility": "SUPPORTED: Data density and fine-cell discretization support an under-40 km stretch target."
+}
