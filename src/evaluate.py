@@ -613,7 +613,9 @@ def main():
     train_coords = train_df[['lat', 'lng']].values if train_df is not None else None
 
     # Load training retrieval database if available
-    retrieval_db_path = os.path.join(cfg.exp_dir, cfg.retrieval_db_name)
+    retrieval_db_path = os.path.join(target_exp_dir, cfg.retrieval_db_name)
+    if not os.path.exists(retrieval_db_path):
+        retrieval_db_path = os.path.join(cfg.exp_dir, cfg.retrieval_db_name)
     retrieval_db = None
     if os.path.exists(retrieval_db_path) and args.mode != "cell_only":
         print(f"Loading retrieval database from {retrieval_db_path}...")
@@ -629,7 +631,7 @@ def main():
     val_tf = get_val_transforms(cfg.image_size)
     val_dataset = GeolocationDataset(
         val_df, cfg.get_path(cfg.train_img_dir), fine_centroids, fine_to_country, fine_to_coarse,
-        max_offset_km=cfg.max_offset_km, transform=val_tf
+        max_offset_km=cfg.max_offset_km, transform=val_tf, tta_mode=args.tta, image_size=cfg.image_size
     )
     val_loader = DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers)
 
@@ -642,6 +644,25 @@ def main():
         cfg.retrieval_k = best_decoder_params["retrieval_k"]
         cfg.retrieval_country_top_k = best_decoder_params["retrieval_country_top_k"]
         cfg.retrieval_blend_alpha = best_decoder_params["retrieval_blend_alpha"]
+    elif retrieval_db is not None:
+        dec_cfg_path = os.path.join(target_exp_dir, "decoder_config.json")
+        if not os.path.exists(dec_cfg_path):
+            dec_cfg_path = os.path.join(cfg.exp_dir, "decoder_config.json")
+        if os.path.exists(dec_cfg_path):
+            try:
+                with open(dec_cfg_path, "r", encoding="utf-8") as f:
+                    dec_params = json.load(f)
+                if "retrieval_k" in dec_params:
+                    cfg.retrieval_k = int(dec_params["retrieval_k"])
+                if "retrieval_country_top_k" in dec_params:
+                    cfg.retrieval_country_top_k = int(dec_params["retrieval_country_top_k"])
+                if "retrieval_blend_alpha" in dec_params:
+                    cfg.retrieval_blend_alpha = float(dec_params["retrieval_blend_alpha"])
+                if "use_geographic_medoid" in dec_params:
+                    cfg.use_geographic_medoid = bool(dec_params["use_geographic_medoid"])
+                print(f"Loaded existing tuned decoder parameters from {dec_cfg_path}: retrieval_k={cfg.retrieval_k}, alpha={cfg.retrieval_blend_alpha}, country_top_k={cfg.retrieval_country_top_k}")
+            except Exception as e:
+                pass
 
     # Run full evaluation
     print(f"\nRunning evaluation on {len(val_df):,} validation images ({args.mode})...")

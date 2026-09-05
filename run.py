@@ -166,7 +166,7 @@ def stage_cv(phase: str = "C", epochs: int = 20, mode: str = "blended", exp_dir:
     print(f"Final Ensemble Predictions: {os.path.join(exp_dir, 'predictions.csv')}")
     print("#" * 80 + "\n")
 
-def run_all_pipeline(split_type: str = "random", exp_dir: str = "experiments/exp_regnety_baseline", phase: str = "BC", epochs: int = 65):
+def run_all_pipeline(split_type: str = "random", exp_dir: str = "experiments/exp_regnety_baseline", phase: str = "BC", epochs: int = 40):
     TOTAL_STAGES = 7
     print("\n" + "#" * 80)
     print("STARTING COMPLETE END-TO-END REGNET-Y GEOLOCATION PIPELINE")
@@ -190,8 +190,8 @@ def run_all_pipeline(split_type: str = "random", exp_dir: str = "experiments/exp
         "--oracle", "--split", split_type
     ], "Oracle Analysis")
 
-    # 4. Training (65-Epoch Curriculum: 15 Ep Country + 50 Ep Joint Localization)
-    banner_desc = f"2-Phase Curriculum Training (15 Ep Country Warm-up + {max(1, epochs-15)} Ep Joint Localization)" if phase in ("BC", "all") else f"Model Training ({phase})"
+    # 4. Training (40-Epoch Curriculum: 10 Ep Country + 30 Ep Joint Localization)
+    banner_desc = f"2-Phase Curriculum Training (10 Ep Country Warm-up + {max(1, epochs-10)} Ep Joint Localization)" if phase in ("BC", "all") else f"Model Training ({phase})"
     print_banner(banner_desc, 4, TOTAL_STAGES)
     run_cmd([
         PYTHON_EXE, os.path.join(SRC_DIR, "train.py"),
@@ -222,7 +222,7 @@ def run_all_pipeline(split_type: str = "random", exp_dir: str = "experiments/exp
     print("\n" + "=" * 80)
     print("SYNCHRONIZING SUBMISSION ARTIFACTS TO PROJECT ROOT")
     print("=" * 80)
-    for fname in ["predictions.csv", "best_model.pth", "config.json", "hierarchy_metadata.json", "fine_centroids.npy"]:
+    for fname in ["predictions.csv", "best_model.pth", "config.json", "hierarchy_metadata.json", "fine_centroids.npy", "decoder_config.json"]:
         src_f = os.path.join(exp_dir, fname)
         dst_f = os.path.join(SCRIPT_DIR, fname)
         if os.path.exists(src_f):
@@ -270,8 +270,8 @@ def main():
     parser.add_argument("--split-type", type=str, default="random", choices=["spatial", "random", "cv"], help="Validation split type (default: random for country-stratified benchmark)")
     parser.add_argument("--fold", type=int, default=None, help="Specific CV fold index (0..4) for training or evaluation")
     parser.add_argument("--ensemble", action="store_true", help="Ensemble predictions across all CV fold models")
-    parser.add_argument("--phase", type=str, default="BC", choices=["A", "B", "C", "BC", "all"], help="Training phase (default: BC for 15 ep Country warm-up + 50 ep Fine localization)")
-    parser.add_argument("--epochs", type=int, default=65, help="Number of training epochs (default: 65)")
+    parser.add_argument("--phase", type=str, default="BC", choices=["A", "B", "C", "BC", "all"], help="Training phase (default: BC for 10 ep Country warm-up + 30 ep Fine localization)")
+    parser.add_argument("--epochs", type=int, default=40, help="Number of training epochs (default: 40)")
     parser.add_argument("--resume", type=str, default=None, help="Checkpoint to resume training from")
     parser.add_argument("--mode", type=str, default="blended", choices=["cell_only", "retrieval_only", "blended"], help="Decoding strategy (default: blended)")
     parser.add_argument("--tta", type=str, default="direct", choices=["direct", "center", "5crop", "6view", "multiscale"], help="TTA mode (default: direct)")

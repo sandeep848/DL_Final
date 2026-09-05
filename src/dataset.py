@@ -577,7 +577,9 @@ class GeolocationDataset(Dataset):
         fine_to_country: np.ndarray,
         fine_to_coarse: np.ndarray,
         max_offset_km: float = 50.0,
-        transform: Optional[transforms.Compose] = None
+        transform: Optional[transforms.Compose] = None,
+        tta_mode: str = "direct",
+        image_size: int = 512
     ):
         self.df = df.reset_index(drop=True)
         self.img_dir = img_dir
@@ -586,6 +588,17 @@ class GeolocationDataset(Dataset):
         self.fine_to_coarse = fine_to_coarse
         self.max_offset_km = max_offset_km
         self.transform = transform
+        self.tta_mode = tta_mode
+        self.image_size = image_size
+
+        if self.tta_mode != "direct":
+            self.norm = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+            ])
+            self.resize_direct = transforms.Resize((image_size, image_size))
+            self.resize_larger = transforms.Resize((int(image_size * 1.06), int(image_size * 1.06)))
+            self.five_crop = transforms.FiveCrop(image_size)
 
         # Precompute target fine cell and coarse region assignments
         lats = self.df['lat'].values
@@ -623,7 +636,30 @@ class GeolocationDataset(Dataset):
         except Exception as e:
             raise RuntimeError(f"Failed to read corrupted image {img_path}: {e}")
 
-        if self.transform:
+        if self.tta_mode != "direct":
+            if self.tta_mode == "center":
+                larger = self.resize_larger(image)
+                crop = transforms.functional.center_crop(larger, (self.image_size, self.image_size))
+                views = [self.norm(self.resize_direct(image)), self.norm(crop)]
+            elif self.tta_mode == "5crop":
+                larger = self.resize_larger(image)
+                crops = self.five_crop(larger)
+                views = [self.norm(c) for c in crops]
+            elif self.tta_mode == "6view":
+                larger = self.resize_larger(image)
+                crops = self.five_crop(larger)
+                views = [self.norm(c) for c in crops] + [self.norm(self.resize_direct(image))]
+            elif self.tta_mode == "multiscale":
+                v1 = self.norm(self.resize_direct(image))
+                larger1 = transforms.Resize((int(self.image_size * 1.12), int(self.image_size * 1.12)))(image)
+                c1 = transforms.functional.center_crop(larger1, (self.image_size, self.image_size))
+                larger2 = transforms.Resize((int(self.image_size * 1.25), int(self.image_size * 1.25)))(image)
+                c2 = transforms.functional.center_crop(larger2, (self.image_size, self.image_size))
+                views = [v1, self.norm(c1), self.norm(c2)]
+            else:
+                views = [self.norm(self.resize_direct(image))]
+            image = torch.stack(views, dim=0)
+        elif self.transform:
             image = self.transform(image)
 
         lat = float(row['lat'])
@@ -724,7 +760,8 @@ class HoldoutDataset(Dataset):
         if not os.path.exists(img_dir):
             raise FileNotFoundError(f"Holdout directory not found: {img_dir}")
 
-        filenames = [f for f in os.listdir(img_dir) if f.endswith('.jpg')]
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        filenames = [f for f in os.listdir(img_dir) if f.lower().endswith(valid_exts)]
         filenames.sort()
         self.filenames = filenames
 

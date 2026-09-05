@@ -256,7 +256,31 @@ def generate_predictions(
             "countries": torch.tensor(raw_db["countries"], dtype=torch.long, device=device),
         }
 
-    # 4. Initialize holdout dataset
+    # 4. Load tuned decoder hyperparameters if available
+    dec_candidates = [
+        os.path.join(cfg.exp_dir, "decoder_config.json"),
+        os.path.join(os.path.dirname(os.path.abspath(ckpt)), "decoder_config.json"),
+        os.path.join(cfg.base_dir, "decoder_config.json"),
+    ]
+    for dec_path in dec_candidates:
+        if os.path.exists(dec_path):
+            try:
+                with open(dec_path, "r", encoding="utf-8") as f:
+                    dec_params = json.load(f)
+                if "retrieval_k" in dec_params:
+                    cfg.retrieval_k = int(dec_params["retrieval_k"])
+                if "retrieval_country_top_k" in dec_params:
+                    cfg.retrieval_country_top_k = int(dec_params["retrieval_country_top_k"])
+                if "retrieval_blend_alpha" in dec_params:
+                    cfg.retrieval_blend_alpha = float(dec_params["retrieval_blend_alpha"])
+                if "use_geographic_medoid" in dec_params:
+                    cfg.use_geographic_medoid = bool(dec_params["use_geographic_medoid"])
+                print(f"Loaded tuned decoder parameters from {dec_path}: retrieval_k={cfg.retrieval_k}, alpha={cfg.retrieval_blend_alpha}, country_top_k={cfg.retrieval_country_top_k}")
+                break
+            except Exception as e:
+                print(f"Notice: Failed to load decoder config from {dec_path}: {e}")
+
+    # 5. Initialize holdout dataset
     holdout_dir = cfg.get_path(cfg.holdout_img_dir)
     if not os.path.exists(holdout_dir):
         raise FileNotFoundError(f"Holdout directory not found: {holdout_dir}")
@@ -340,7 +364,28 @@ def generate_ensemble_predictions(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("=" * 70)
     print("GENERATING 5-FOLD ENSEMBLE HOLDOUT PREDICTIONS")
-    print("=" * 70)
+    # Load tuned decoder hyperparameters if available
+    dec_candidates = [
+        os.path.join(cfg.exp_dir, "decoder_config.json"),
+        os.path.join(cfg.base_dir, "decoder_config.json"),
+    ]
+    for dec_path in dec_candidates:
+        if os.path.exists(dec_path):
+            try:
+                with open(dec_path, "r", encoding="utf-8") as f:
+                    dec_params = json.load(f)
+                if "retrieval_k" in dec_params:
+                    cfg.retrieval_k = int(dec_params["retrieval_k"])
+                if "retrieval_country_top_k" in dec_params:
+                    cfg.retrieval_country_top_k = int(dec_params["retrieval_country_top_k"])
+                if "retrieval_blend_alpha" in dec_params:
+                    cfg.retrieval_blend_alpha = float(dec_params["retrieval_blend_alpha"])
+                if "use_geographic_medoid" in dec_params:
+                    cfg.use_geographic_medoid = bool(dec_params["use_geographic_medoid"])
+                print(f"Loaded tuned decoder parameters for ensemble from {dec_path}: retrieval_k={cfg.retrieval_k}, alpha={cfg.retrieval_blend_alpha}, country_top_k={cfg.retrieval_country_top_k}")
+                break
+            except Exception as e:
+                pass
 
     # 1. Discover available fold models
     fold_models = []

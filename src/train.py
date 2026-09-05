@@ -38,7 +38,8 @@ from dataset import (
     create_stratified_cv_splits,
     compute_split_diagnostics,
     build_geographic_hierarchy,
-    load_geographic_hierarchy
+    load_geographic_hierarchy,
+    EARTH_RADIUS_KM
 )
 from model import (
     RegNetYGeolocationModel,
@@ -46,6 +47,18 @@ from model import (
     set_phase_trainable,
     load_saved_model
 )
+
+def create_grad_scaler(device_type: str = 'cuda', enabled: bool = True):
+    """Creates a backward-compatible GradScaler across PyTorch versions."""
+    if hasattr(torch.amp, 'GradScaler'):
+        try:
+            return torch.amp.GradScaler(device_type, enabled=enabled)
+        except (TypeError, ValueError):
+            return torch.amp.GradScaler(enabled=enabled)
+    elif hasattr(torch.cuda.amp, 'GradScaler'):
+        return torch.cuda.amp.GradScaler(enabled=enabled)
+    else:
+        return None
 
 # ------------------------------------------------------------------------------
 # 1. Deterministic Seeding & Reproducibility
@@ -148,7 +161,7 @@ def decode_coordinates_spherical(
 
     # Angular distance on unit sphere between top-1 cell and all centroids: (B, N)
     cos_sim = torch.sum(top1_3d.unsqueeze(1) * centroids_3d_tensor.unsqueeze(0), dim=-1).clamp(-1.0, 1.0)
-    dist_to_top1_km = 6371.0 * torch.acos(cos_sim)
+    dist_to_top1_km = EARTH_RADIUS_KM * torch.acos(cos_sim)
 
     # Local neighborhood mask: within local_neighborhood_km
     local_mask = dist_to_top1_km <= local_neighborhood_km
@@ -157,8 +170,8 @@ def decode_coordinates_spherical(
             # Allow candidate cells belonging to top-K predicted countries
             k_countries = min(country_top_k, country_logits.size(-1))
             _, top_c = torch.topk(country_logits.float(), k=k_countries, dim=-1)  # (B, k_countries)
-            # fine_to_country: (N,), top_c: (B, k_countries)
-            allowed_country_mask = torch.isin(fine_to_country.unsqueeze(0).expand(batch_size, -1), top_c)  # (B, N)
+            # fine_to_country: (N,), top_c: (B, k_countries) -> per-row comparison: (B, N)
+            allowed_country_mask = (fine_to_country[None, :, None] == top_c[:, None, :]).any(dim=-1)
             local_mask = local_mask & allowed_country_mask
         else:
             top1_country = fine_to_country[top1_cell]
@@ -283,7 +296,7 @@ def train_phase_a_epoch(
     loader: DataLoader,
     optimizer: optim.Optimizer,
     criterion_contrastive: GeographicContrastiveLoss,
-    scaler: torch.amp.GradScaler,
+    scaler: Any,
     device: torch.device,
     grad_accum_steps: int = 1,
     grad_clip_norm: float = 1.0
@@ -340,7 +353,7 @@ def train_phase_b_epoch(
     model: RegNetYGeolocationModel,
     loader: DataLoader,
     optimizer: optim.Optimizer,
-    scaler: torch.amp.GradScaler,
+    scaler: Any,
     device: torch.device,
     grad_accum_steps: int = 1,
     grad_clip_norm: float = 1.0
@@ -394,7 +407,7 @@ def train_phase_c_epoch(
     model: RegNetYGeolocationModel,
     loader: DataLoader,
     optimizer: optim.Optimizer,
-    scaler: torch.amp.GradScaler,
+    scaler: Any,
     ema: EMA,
     centroids_3d_tensor: torch.Tensor,
     centroids_latlng_tensor: torch.Tensor,
@@ -623,7 +636,7 @@ def build_retrieval_database(
 def main():
     parser = argparse.ArgumentParser(description="Image Geolocation Challenge RegNet-Y Training")
     parser.add_argument("--config", type=str, default=None, help="Path to configuration JSON")
-    parser.add_argument("--phase", type=str, default="BC", choices=["A", "B", "C", "BC", "all"], help="Training phase to execute (BC: 5 ep Country warm-up + 30 ep Fine)")
+    parser.add_argument("--phase", type=str, default="BC", choices=["A", "B", "C", "BC", "all"], help="Training phase to execute (BC: 10 ep Country warm-up + 30 ep Fine)")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume training from")
     parser.add_argument("--split", type=str, default="random", choices=["spatial", "random", "cv"], help="Validation split type")
     parser.add_argument("--fold", type=int, default=None, help="Fold index (0..4) for 5-fold CV")
@@ -730,11 +743,12 @@ def main():
     ).to(device)
 
     ema = EMA(model, decay=cfg.ema_decay)
-    scaler = torch.amp.GradScaler('cuda', enabled=device.type == 'cuda')
+    scaler = create_grad_scaler('cuda', enabled=device.type == 'cuda' and cfg.use_amp)
 
     # Resume checkpoint if specified
     start_epoch = 0
     best_val_median = float('inf')
+    checkpoint = None
     if args.resume:
         print(f"Resuming training from checkpoint: {args.resume}")
         checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
@@ -872,7 +886,11 @@ def main():
                 print(f"Loading weights from Phase B checkpoint: {ckpt_b_path}")
                 ckpt_b = torch.load(ckpt_b_path, map_location=device, weights_only=False)
                 model.load_state_dict(ckpt_b["model_state_dict"])
-        ema = EMA(model, decay=cfg.ema_decay)
+        if not (args.resume and checkpoint is not None and "ema_state_dict" in checkpoint):
+            ema = EMA(model, decay=cfg.ema_decay)
+        else:
+            ema.load_state_dict(checkpoint["ema_state_dict"])
+            print("  ✓ Restored EMA weights from resumed checkpoint")
 
         set_phase_trainable(model, "C")
         train_ds = GeolocationDataset(
@@ -900,6 +918,28 @@ def main():
             return cfg.min_lr_ratio + (1.0 - cfg.min_lr_ratio) * 0.5 * (1.0 + math.cos(math.pi * progress))
 
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+        if args.resume and checkpoint is not None:
+            if "optimizer_state_dict" in checkpoint:
+                try:
+                    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                    print("  ✓ Restored optimizer state from checkpoint")
+                except Exception as e:
+                    print(f"  Notice: Could not restore optimizer state: {e}")
+
+            if "scheduler_state_dict" in checkpoint:
+                try:
+                    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+                    print("  ✓ Restored scheduler state from checkpoint")
+                except Exception as e:
+                    print(f"  Notice: Could not restore scheduler state: {e}")
+
+            if "scaler_state_dict" in checkpoint and scaler is not None:
+                try:
+                    scaler.load_state_dict(checkpoint["scaler_state_dict"])
+                    print("  ✓ Restored scaler state from checkpoint")
+                except Exception as e:
+                    print(f"  Notice: Could not restore scaler state: {e}")
 
         metrics_log = []
         best_ckpt_path = os.path.join(target_exp_dir, cfg.checkpoint_best_name)

@@ -79,7 +79,7 @@ class GeolocationConfig:
     use_amp: bool = True
     ema_decay: float = 0.999
     
-    # --- Training Curriculum (65 epochs total: 15 Ep Country warm-up + 50 Ep Joint Localization) ---
+    # --- Training Curriculum (40 epochs total: 10 Ep Country warm-up + 30 Ep Joint Localization) ---
     # Phase A: Representation learning (RegNet-Y backbone + metric embedding)
     phase_a_epochs: int = 5
     phase_a_lr: float = 6e-4
@@ -87,12 +87,12 @@ class GeolocationConfig:
     metric_dist_scale: float = 50.0  # weight = exp(-dist / 50.0)
     
     # Phase B: Country and Coarse-Region learning
-    phase_b_epochs: int = 15
+    phase_b_epochs: int = 10
     phase_b_lr: float = 1e-3
     phase_b_backbone_lr: float = 4e-4
     
-    # Phase C: Joint Localization (50 epochs combined with Phase B = 65 total)
-    phase_c_epochs: int = 50
+    # Phase C: Joint Localization (30 epochs combined with Phase B = 40 total)
+    phase_c_epochs: int = 30
     phase_c_backbone_lr: float = 6e-4
     phase_c_head_lr: float = 1.2e-3
     
@@ -173,6 +173,12 @@ class GeolocationConfig:
         """Constructs a GeolocationConfig instance from a dictionary."""
         valid_keys = set(cls.__dataclass_fields__.keys())
         filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+        current_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        if "base_dir" in filtered_data:
+            if not filtered_data["base_dir"] or not os.path.exists(filtered_data["base_dir"]):
+                filtered_data["base_dir"] = current_repo_root
+        else:
+            filtered_data["base_dir"] = current_repo_root
         return cls(**filtered_data)
 
     def save_json(self, path: Optional[str] = None) -> str:

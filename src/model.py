@@ -148,7 +148,7 @@ class RegNetYGeolocationModel(nn.Module):
 
     def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         """Extracts 128-dimensional L2-normalized metric embeddings for retrieval."""
-        feat_map = self.backbone(x)
+        feat_map = self.backbone.forward_features(x)
         feat = self.gem_pool(feat_map) if len(feat_map.shape) == 4 else feat_map
         proj = self.shared_proj(feat)
         metric_embed = self.metric_head(proj)
@@ -168,7 +168,7 @@ class RegNetYGeolocationModel(nn.Module):
         - pred_xyz: (B, 3) normalized unit sphere vector or None
         - metric_embed: (B, embedding_dim) L2-normalized representation
         """
-        feat_map = self.backbone(x)
+        feat_map = self.backbone.forward_features(x)
         feat = self.gem_pool(feat_map) if len(feat_map.shape) == 4 else feat_map
         proj = self.shared_proj(feat)
 
