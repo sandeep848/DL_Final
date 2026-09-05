@@ -1,0 +1,7 @@
+{
+  "retrieval_k": 20,
+  "retrieval_country_top_k": 2,
+  "retrieval_blend_alpha": 1.0,
+  "use_geographic_medoid": false,
+  "median_km": 146.63954162597656
+}

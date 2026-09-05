@@ -14,24 +14,24 @@
     "pct_within_200km": 100.0
   },
   "oracles": {
-    "fine_cell_oracle_median_km": 23.95,
-    "fine_cell_oracle_mean_km": 26.96,
-    "coarse_region_oracle_median_km": 122.31
+    "fine_cell_oracle_median_km": 19.83,
+    "fine_cell_oracle_mean_km": 23.07,
+    "coarse_region_oracle_median_km": 122.17
   },
   "cell_population": {
-    "total_fine_cells": 576,
+    "total_fine_cells": 768,
     "empty_cells": 0,
-    "undersampled_cells_lt5": 14,
+    "undersampled_cells_lt5": 52,
     "min_samples_per_cell": 2,
-    "max_samples_per_cell": 76,
-    "mean_samples_per_cell": 16.3,
-    "median_samples_per_cell": 15.0
+    "max_samples_per_cell": 59,
+    "mean_samples_per_cell": 12.2,
+    "median_samples_per_cell": 11.0
   },
   "offset_distribution_km": {
-    "p50": 20.46,
-    "p90": 44.01,
-    "p95": 51.65,
-    "max": 109.53
+    "p50": 16.28,
+    "p90": 36.32,
+    "p95": 43.37,
+    "max": 98.45
   },
   "per_country_stats": {
     "Belarus": {

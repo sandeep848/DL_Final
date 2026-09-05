@@ -1,5 +1,5 @@
 {
-  "num_fine_cells": 576,
+  "num_fine_cells": 768,
   "num_coarse_regions": 48,
   "num_countries": 12,
   "country_list": [
@@ -17,7 +17,7 @@
     "United_Kingdom"
   ],
   "seed": 42,
-  "config_hash": "0abcaee9dd82c38bf65102329c86fbd2aca1cf94a4d61d5921dcb94b580bc772",
+  "config_hash": "83deb1e70b9a9559974b480203c0e7c1d423c09ae4330b4730552a65a7271306",
   "train_manifest_hash": "374b00679e34bc49b35c7fd691affeb33b61b96fa245959443fe60261b842464",
   "train_labels_hash": "5b8df03acb04955bacb6c8a3d313d15cb12dabe27a77c2694ff885741b04c8d6",
   "num_training_samples": 9406
