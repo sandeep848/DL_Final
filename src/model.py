@@ -33,7 +33,7 @@ class RegNetYGeolocationModel(nn.Module):
     """
     def __init__(
         self,
-        num_fine_cells: int = 576,
+        num_fine_cells: int = 768,
         num_coarse_regions: int = 48,
         num_countries: int = 12,
         embedding_dim: int = 128,
@@ -41,7 +41,8 @@ class RegNetYGeolocationModel(nn.Module):
         shared_proj_dim: int = 384,
         dropout_rate: float = 0.2,
         include_cartesian_head: bool = True,
-        gem_p: float = 3.0
+        gem_p: float = 1.0,
+        use_mlp_heads: bool = True
     ):
         super(RegNetYGeolocationModel, self).__init__()
         self.num_fine_cells = num_fine_cells
@@ -51,6 +52,7 @@ class RegNetYGeolocationModel(nn.Module):
         self.max_offset_km = max_offset_km
         self.shared_proj_dim = shared_proj_dim
         self.include_cartesian_head = include_cartesian_head
+        self.use_mlp_heads = use_mlp_heads
 
         # HARD RULE: Must always be trained from scratch without external weights
         self.backbone = timm.create_model('regnety_004', pretrained=False, num_classes=0)
@@ -66,15 +68,30 @@ class RegNetYGeolocationModel(nn.Module):
             nn.Dropout(p=dropout_rate)
         )
 
-        # 1. 12-Country classification head
-        self.country_head = nn.Sequential(
-            nn.Linear(shared_proj_dim, num_countries)
-        )
-
-        # 2. Coarse-region classification head
-        self.coarse_head = nn.Sequential(
-            nn.Linear(shared_proj_dim, num_coarse_regions)
-        )
+        # 1. 12-Country classification head (Deep 2-layer MLP for superior country discrimination)
+        if self.use_mlp_heads:
+            self.country_head = nn.Sequential(
+                nn.Linear(shared_proj_dim, 192),
+                nn.BatchNorm1d(192),
+                nn.Hardswish(),
+                nn.Dropout(p=dropout_rate),
+                nn.Linear(192, num_countries)
+            )
+            # 2. Coarse-region classification head
+            self.coarse_head = nn.Sequential(
+                nn.Linear(shared_proj_dim, 192),
+                nn.BatchNorm1d(192),
+                nn.Hardswish(),
+                nn.Dropout(p=dropout_rate),
+                nn.Linear(192, num_coarse_regions)
+            )
+        else:
+            self.country_head = nn.Sequential(
+                nn.Linear(shared_proj_dim, num_countries)
+            )
+            self.coarse_head = nn.Sequential(
+                nn.Linear(shared_proj_dim, num_coarse_regions)
+            )
 
         # 3. Fine-cell classification head
         self.cell_head = nn.Sequential(
@@ -227,13 +244,15 @@ def set_phase_trainable(model: RegNetYGeolocationModel, phase: str) -> None:
         raise ValueError(f"Unknown training phase '{phase}'. Expected 'A', 'B', or 'C'.")
 
 def get_model(
-    num_fine_cells: int = 576,
+    num_fine_cells: int = 768,
     num_coarse_regions: int = 48,
     num_countries: int = 12,
     embedding_dim: int = 128,
     max_offset_km: float = 50.0,
     shared_proj_dim: int = 384,
-    include_cartesian_head: bool = True
+    include_cartesian_head: bool = True,
+    gem_p: float = 1.0,
+    use_mlp_heads: bool = True
 ) -> RegNetYGeolocationModel:
     """
     Instantiates the single RegNet-Y 400MF Geolocation model with pretrained=False,
@@ -246,7 +265,9 @@ def get_model(
         embedding_dim=embedding_dim,
         max_offset_km=max_offset_km,
         shared_proj_dim=shared_proj_dim,
-        include_cartesian_head=include_cartesian_head
+        include_cartesian_head=include_cartesian_head,
+        gem_p=gem_p,
+        use_mlp_heads=use_mlp_heads
     )
     counts = model.verify_parameter_budget()
     print("=" * 65)
@@ -288,19 +309,35 @@ def load_saved_model(
     if "cell_head.0.weight" in state_dict:
         num_fine_cells = state_dict["cell_head.0.weight"].shape[0]
     else:
-        num_fine_cells = loaded_config.get("num_fine_cells", 576)
+        num_fine_cells = loaded_config.get("num_fine_cells", 768)
 
     if "shared_proj.0.weight" in state_dict:
         shared_proj_dim = state_dict["shared_proj.0.weight"].shape[0]
     else:
         shared_proj_dim = loaded_config.get("shared_proj_dim", 384)
 
-    if "coarse_head.0.weight" in state_dict:
-        num_coarse_regions = state_dict["coarse_head.0.weight"].shape[0]
-    else:
-        num_coarse_regions = loaded_config.get("num_coarse_regions", 48)
+    use_mlp_heads = loaded_config.get("use_mlp_heads", ("country_head.4.weight" in state_dict or "country_head.1.weight" in state_dict))
 
-    num_countries = loaded_config.get("num_countries", 12)
+    if use_mlp_heads:
+        if "coarse_head.4.weight" in state_dict:
+            num_coarse_regions = state_dict["coarse_head.4.weight"].shape[0]
+        else:
+            num_coarse_regions = loaded_config.get("num_coarse_regions", 48)
+        if "country_head.4.weight" in state_dict:
+            num_countries = state_dict["country_head.4.weight"].shape[0]
+        else:
+            num_countries = loaded_config.get("num_countries", 12)
+    else:
+        if "coarse_head.0.weight" in state_dict:
+            num_coarse_regions = state_dict["coarse_head.0.weight"].shape[0]
+        else:
+            num_coarse_regions = loaded_config.get("num_coarse_regions", 48)
+        if "country_head.0.weight" in state_dict:
+            num_countries = state_dict["country_head.0.weight"].shape[0]
+        else:
+            num_countries = loaded_config.get("num_countries", 12)
+
+    gem_p = loaded_config.get("gem_p", 1.0)
     embedding_dim = loaded_config.get("embedding_dim", 128)
     max_offset_km = loaded_config.get("max_offset_km", 50.0)
     include_cartesian = "cartesian_head.2.weight" in state_dict or "cartesian_head.0.weight" in state_dict
@@ -312,7 +349,9 @@ def load_saved_model(
         embedding_dim=embedding_dim,
         max_offset_km=max_offset_km,
         shared_proj_dim=shared_proj_dim,
-        include_cartesian_head=include_cartesian
+        include_cartesian_head=include_cartesian,
+        gem_p=gem_p,
+        use_mlp_heads=use_mlp_heads
     )
 
     model.load_state_dict(state_dict, strict=True)

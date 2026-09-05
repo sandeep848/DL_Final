@@ -45,15 +45,16 @@ class GeolocationConfig:
     # --- Model Architecture ---
     model_arch: str = "regnety_004"
     pretrained: bool = False  # HARD RULE: Must always be False
-    gem_p: float = 3.0
+    gem_p: float = 1.0
     gem_eps: float = 1e-6
     shared_proj_dim: int = 384
     dropout_rate: float = 0.2
+    use_mlp_heads: bool = True
     
     # Geographic hierarchy dimensions
     num_countries: int = 12
     num_coarse_regions: int = 48   # 4 coarse regions per country
-    num_fine_cells: int = 576      # 48 fine cells per country (val oracle bound ~23.9 km)
+    num_fine_cells: int = 768      # 64 fine cells per country (val oracle bound ~17.5 km)
     embedding_dim: int = 128       # Metric retrieval embedding dimension
     include_cartesian_head: bool = True  # 3D Cartesian head within param budget
     max_offset_km: float = 50.0    # Maximum local tangent-plane displacement (covers ~90-95% cell spread)
@@ -79,7 +80,7 @@ class GeolocationConfig:
     use_amp: bool = True
     ema_decay: float = 0.999
     
-    # --- Training Curriculum (40 epochs total: 10 Ep Country warm-up + 30 Ep Joint Localization) ---
+    # --- Training Curriculum (60 epochs total: 15 Ep Country warm-up + 45 Ep Joint Localization) ---
     # Phase A: Representation learning (RegNet-Y backbone + metric embedding)
     phase_a_epochs: int = 5
     phase_a_lr: float = 6e-4
@@ -87,17 +88,17 @@ class GeolocationConfig:
     metric_dist_scale: float = 50.0  # weight = exp(-dist / 50.0)
     
     # Phase B: Country and Coarse-Region learning
-    phase_b_epochs: int = 10
+    phase_b_epochs: int = 15
     phase_b_lr: float = 1e-3
     phase_b_backbone_lr: float = 4e-4
     
-    # Phase C: Joint Localization (30 epochs combined with Phase B = 40 total)
-    phase_c_epochs: int = 30
+    # Phase C: Joint Localization (45 epochs combined with Phase B = 60 total)
+    phase_c_epochs: int = 45
     phase_c_backbone_lr: float = 6e-4
     phase_c_head_lr: float = 1.2e-3
     
     # Phase C Multi-Task Loss Weights
-    loss_weight_country: float = 6.0
+    loss_weight_country: float = 8.0
     loss_weight_coarse: float = 2.0
     loss_weight_fine: float = 2.0
     loss_weight_metric: float = 0.5

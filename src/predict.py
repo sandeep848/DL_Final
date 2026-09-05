@@ -100,7 +100,7 @@ def audit_submission(
     print("\n[Check 6/13] Verifying Centroid Hierarchy Metadata...")
     with open(meta_path, "r", encoding="utf-8") as f:
         meta_data = json.load(f)
-    expected_cells = cfg_data.get("num_fine_cells", 576)
+    expected_cells = cfg_data.get("num_fine_cells", 768)
     if meta_data.get("num_fine_cells") != expected_cells:
         print(f"  [FAIL] Centroid metadata cell count mismatch! Found {meta_data.get('num_fine_cells')}, expected {expected_cells}")
         return False

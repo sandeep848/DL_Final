@@ -376,7 +376,7 @@ def train_phase_b_epoch(
             _, coarse_logits, country_logits, _, _, _ = model(images)
             loss_cntry = compute_focal_cross_entropy(country_logits, country_idx, gamma=1.5, label_smoothing=0.05)
             loss_coarse = criterion_coarse(coarse_logits.float(), coarse_idx)
-            loss = 4.0 * loss_cntry + 1.0 * loss_coarse
+            loss = 5.0 * loss_cntry + 1.0 * loss_coarse
             loss_scaled = loss / grad_accum_steps
 
         scaler.scale(loss_scaled).backward()
@@ -636,7 +636,7 @@ def build_retrieval_database(
 def main():
     parser = argparse.ArgumentParser(description="Image Geolocation Challenge RegNet-Y Training")
     parser.add_argument("--config", type=str, default=None, help="Path to configuration JSON")
-    parser.add_argument("--phase", type=str, default="BC", choices=["A", "B", "C", "BC", "all"], help="Training phase to execute (BC: 10 ep Country warm-up + 30 ep Fine)")
+    parser.add_argument("--phase", type=str, default="BC", choices=["A", "B", "C", "BC", "all"], help="Training phase to execute (BC: 15 ep Country warm-up + 45 ep Fine)")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume training from")
     parser.add_argument("--split", type=str, default="random", choices=["spatial", "random", "cv"], help="Validation split type")
     parser.add_argument("--fold", type=int, default=None, help="Fold index (0..4) for 5-fold CV")
