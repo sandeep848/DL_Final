@@ -1,3 +1,18 @@
+"""
+Geolocation Challenge Verification Suite (23 Comprehensive Tests).
+
+Why maintain an extensive test suite for a deep learning competition?
+Deep learning models can silently fail or train with subtle mathematical bugs without throwing
+runtime errors:
+- High-latitude cosine projections can invert longitude differences.
+- Haversine gradient calculations can produce NaNs when true and predicted points coincide (distance = 0).
+- Model parameter counts can easily drift past the 5,000,000 threshold if an extra bottleneck layer is added.
+- Training split manifests can accidentally leak coordinates across the validation barrier.
+
+This suite programmatically stress-tests every mathematical, structural, and hardware guarantee
+before and after any code modification.
+"""
+
 import os
 import sys
 import tempfile

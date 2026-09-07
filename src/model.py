@@ -7,29 +7,42 @@ import timm
 
 class GeMPooling(nn.Module):
     """
-    Generalized Mean Pooling (GeM) layer with learnable exponent p.
-    Focuses on salient localized visual features (architectural details, road markings, landscape motifs)
-    rather than uniform global average pooling.
+    Generalized Mean Pooling (GeM) with learnable exponent p.
+    
+    Why GeM instead of standard Global Average Pooling (GAP)?
+    Standard GAP flattens feature maps uniformly across spatial dimensions, which washes out 
+    distinctive localized visual clues (like road signs, unique building styles, or vegetation types). 
+    With p > 1, GeM softly emphasizes regions with higher activations—acting like a differentiable, 
+    learnable bridge between average pooling (p=1) and max pooling (p->infinity).
     """
     def __init__(self, p: float = 3.0, eps: float = 1e-6):
         super(GeMPooling, self).__init__()
+        # Initializing p as a trainable parameter allows the network to adapt its spatial selectivity
         self.p = nn.Parameter(torch.ones(1) * p)
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x shape: (B, C, H, W)
+        # Input tensor shape: (batch_size, channels, height, width)
         orig_dtype = x.dtype
-        # Always compute GeM power in float32 to avoid float16 exponent overflow/underflow
+        # Important: Compute powers in float32. In fp16 / mixed precision, taking high powers 
+        # of feature activations or dividing by very small roots easily produces inf/NaN cascades.
         x_clamped = x.float().clamp(min=self.eps).pow(self.p)
         pooled = F.avg_pool2d(x_clamped, (x.size(-2), x.size(-1))).pow(1.0 / self.p)
         return pooled.squeeze(-1).squeeze(-1).to(orig_dtype)
 
 class RegNetYGeolocationModel(nn.Module):
     """
-    Primary Geolocation Model using RegNet-Y 400MF backbone with GeM pooling,
-    compact shared feature projection, and multi-task geographic heads.
-    Trained strictly from scratch with pretrained=False.
-    Total parameters are verified dynamically to remain strictly <= 5,000,000.
+    Main Geolocation Model built around a RegNet-Y 400MF backbone.
+    
+    Key design considerations:
+    1. Parameter budget: The competition caps models at 5,000,000 parameters.
+       RegNet-Y 400MF gives us strong convolutional representations with Squeeze-and-Excitation 
+       blocks at ~3.9M parameters, leaving roughly 1.1M parameters for the bottleneck and all heads.
+    2. Training from scratch: Because ImageNet weights are strictly disallowed, we use BatchNorm 
+       and residual connections throughout to ensure stable gradient propagation from random init.
+    3. Multi-task heads: Jointly predicting Country, Coarse Region, Fine Cell, and Local Offset 
+       forces the shared backbone to learn hierarchical geographic features rather than overfitting 
+       to raw pixel memorization.
     """
     def __init__(
         self,
@@ -54,13 +67,14 @@ class RegNetYGeolocationModel(nn.Module):
         self.include_cartesian_head = include_cartesian_head
         self.use_mlp_heads = use_mlp_heads
 
-        # HARD RULE: Must always be trained from scratch without external weights
+        # Strictly initialized from scratch to honor challenge data policy
         self.backbone = timm.create_model('regnety_004', pretrained=False, num_classes=0)
-        in_features = self.backbone.num_features  # 440 for regnety_004
+        in_features = self.backbone.num_features  # 440 output channels from regnety_004
 
         self.gem_pool = GeMPooling(p=gem_p)
         
-        # Compact shared feature projection to bottleneck dimensions and control parameter budget
+        # Bottleneck projection: compress the 440-d feature map down to a shared latent space.
+        # This keeps the parameter count tightly controlled across all multi-task prediction heads.
         self.shared_proj = nn.Sequential(
             nn.Linear(in_features, shared_proj_dim),
             nn.BatchNorm1d(shared_proj_dim),
@@ -68,7 +82,9 @@ class RegNetYGeolocationModel(nn.Module):
             nn.Dropout(p=dropout_rate)
         )
 
-        # 1. 12-Country classification head (Deep 2-layer MLP for superior country discrimination)
+        # 1. 12-Country classification head
+        # We use a 2-layer MLP because distinguishing broad country borders requires non-linear
+        # feature combinations (e.g., foliage style + road asphalt texture + signage color).
         if self.use_mlp_heads:
             self.country_head = nn.Sequential(
                 nn.Linear(shared_proj_dim, 192),
@@ -77,7 +93,7 @@ class RegNetYGeolocationModel(nn.Module):
                 nn.Dropout(p=dropout_rate),
                 nn.Linear(192, num_countries)
             )
-            # 2. Coarse-region classification head
+            # 2. Coarse-region classification head (4 regions per country = 48 total)
             self.coarse_head = nn.Sequential(
                 nn.Linear(shared_proj_dim, 192),
                 nn.BatchNorm1d(192),
@@ -93,17 +109,19 @@ class RegNetYGeolocationModel(nn.Module):
                 nn.Linear(shared_proj_dim, num_coarse_regions)
             )
 
-        # 3. Fine-cell classification head
+        # 3. Fine-cell classification head (768 spatial Voronoi cells)
         self.cell_head = nn.Sequential(
             nn.Linear(shared_proj_dim, num_fine_cells)
         )
 
-        # 4. 128-dimensional metric retrieval embedding head (L2-normalized)
+        # 4. Metric retrieval embedding head: 128-d vector for nearest-neighbor verification
         self.metric_head = nn.Sequential(
             nn.Linear(shared_proj_dim, embedding_dim)
         )
 
-        # 5. Local tangent-plane east/north offset head (tanh in [-1, 1], scaled by max_offset_km)
+        # 5. Continuous local offset head (tangent-plane displacement north/east in km)
+        # We use Tanh to enforce a bounded box [-max_offset_km, +max_offset_km] around each centroid.
+        # This prevents the continuous regression from shooting off wildly into the ocean.
         self.offset_head = nn.Sequential(
             nn.Linear(shared_proj_dim, 64),
             nn.Hardswish(),
@@ -111,7 +129,7 @@ class RegNetYGeolocationModel(nn.Module):
             nn.Tanh()
         )
 
-        # 6. Optional 3-dimensional normalized Cartesian unit sphere head
+        # 6. Optional direct 3D unit-sphere Cartesian vector head (x, y, z)
         if self.include_cartesian_head:
             self.cartesian_head = nn.Sequential(
                 nn.Linear(shared_proj_dim, 64),
@@ -121,7 +139,8 @@ class RegNetYGeolocationModel(nn.Module):
         else:
             self.cartesian_head = None
 
-        # Verify parameter count immediately upon initialization
+        # Fail-fast safeguard: verify parameter count at initialization so we never accidentally
+        # train or save a model that violates the 5M budget.
         self.verify_parameter_budget()
 
     def count_parameters(self) -> Dict[str, int]:

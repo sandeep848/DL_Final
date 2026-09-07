@@ -140,14 +140,19 @@ def decode_coordinates_spherical(
     Decodes continuous GPS coordinates via spatially-constrained local neighborhood
     expectation on the 3D unit sphere plus local tangent-plane displacement in km.
 
-    Prevents multimodal averaging collapse:
-    - Incorporates country log-probabilities as hierarchical prior.
-    - Identifies dominant cell c* = argmax(logits).
-    - Restricts candidate cells to local spatial neighborhood (<= local_neighborhood_km)
-      and top predicted countries (country_top_k, default 2 for smooth continental border transitions),
-      ensuring expectation cannot jump across continents or distant borders while allowing seamless border crossings.
-    - Performs soft spherical vector sum over top-k local candidates.
-    - Adds learned tangent-plane displacement (north_km, east_km).
+    Why local neighborhood masking is essential (avoiding multimodal collapse):
+    If an image looks like a pine forest, the model might place 40% probability on Finland, 
+    30% on Sweden, and 30% on northern Spain. 
+    If you took a naive global expectation (sum of probability * centroid), you would predict 
+    the weighted average of these points—landing somewhere in central Germany or the North Sea 
+    where no pine forest looks like that!
+    
+    Instead, we:
+    1. Find the top-1 winning cell c* = argmax(logits).
+    2. Mask out any cell further than 150 km from c* (setting its logit to -10,000).
+    3. Softmax only over the surviving adjacent cells within this local cluster.
+    4. Add the bounded local tangent-plane offset (north_km, east_km) for fine precision.
+    This guarantees that the model's prediction stays within a coherent geographic neighborhood.
     """
     logits = cell_logits.clone().float()
     if country_logits is not None and fine_to_country is not None:
@@ -473,6 +478,11 @@ def train_phase_c_epoch(
                 country_weight=cfg.country_logit_weight, local_neighborhood_km=cfg.neighborhood_radius_km,
                 country_top_k=cfg.decoder_country_top_k
             )
+            # Why Log-Haversine loss log(1 + d / 10)?
+            # Raw kilometer MSE scales quadratically: a 2,000 km blunder produces a loss of 4,000,000!
+            # That massive gradient drowns out small, high-precision signals (e.g. improving from 30 km to 15 km).
+            # Taking log(1 + d / 10) flattens severe outlier penalties and makes the loss sensitive 
+            # to fine-grained improvements, which directly optimizes the challenge's headline metric (Median Haversine).
             dists_km = haversine_km_torch(decoded_lat, decoded_lng, targets_coords[:, 0], targets_coords[:, 1])
             loss_hav = (torch.log(1.0 + dists_km / 10.0)).mean()
 

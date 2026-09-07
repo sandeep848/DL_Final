@@ -27,8 +27,15 @@ def audit_submission(
     holdout_dir: Optional[str] = None
 ) -> bool:
     """
-    Performs a strict, read-only audit of the model, artifacts, parameters, and predictions.
-    Does not modify or write any files.
+    Performs a strict, read-only pre-flight checklist on model artifacts and predictions.
+
+    Why an automated 13-point audit?
+    Competition submissions often suffer from trivial formatting pitfalls that can lead to 
+    disqualification: accidental NaN coordinates, an extra header column, duplicate filenames, 
+    or exceeding the 5,000,000 parameter budget by a few layers.
+    
+    This function programmatically verifies all submission criteria before packaging, guaranteeing 
+    that the predictions and model weights are 100% compliant with the challenge rules.
     """
     print("=" * 75)
     print("IMAGE GEOLOCATION CHALLENGE: STRICT SUBMISSION AUDIT")

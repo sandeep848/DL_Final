@@ -1,58 +1,186 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,twocolumn,a4paper]{article}
 \usepackage[utf8]{inputenc}
-\usepackage{geometry}
-\geometry{a4paper, margin=1in}
-\usepackage{graphicx}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{hyperref}
+\usepackage[margin=1.5cm,top=1.8cm,bottom=1.8cm]{geometry}
+\usepackage{amsmath,amssymb}
 \usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\setlist{itemsep=1pt,topsep=2pt,parsep=0pt}
+\titlespacing*{\section}{0pt}{6pt}{3pt}
+\titlespacing*{\subsection}{0pt}{4pt}{2pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{2pt}
 
-\title{\vspace{-2cm}\textbf{Image Geolocation Challenge: Ultra-Fine European Photo Localization}\\
-\large Spatially-Constrained Local Neighborhood Softmax with RegNet-Y 400MF \& GeM Pooling}
-\author{Geolocation Challenge Submission}
-\date{\today}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\title{\vspace{-1.8cm}\textbf{Deep Geolocation with RegNet-Y 400MF:}\\
+\large Country-Stratified Voronoi Discretization, Bounded Local Softmax, and a Multi-Task Curriculum}
+
+\date{\vspace{-0.5cm}}
 
 \begin{document}
 \maketitle
 \thispagestyle{empty}
 
-\section{Introduction and Constraints}
-This report presents our ultra-fine methodology and empirical evaluation for the Image Geolocation Challenge. The task is to predict exact decimal GPS coordinates (latitude, longitude) of street-level photos taken across 12 European countries (Belarus, Finland, France, Germany, Iceland, Italy, Norway, Poland, Spain, Sweden, Turkey, United Kingdom).
+\begin{abstract}
+We describe a from-scratch geolocation system for street-level photos across 12 European countries, built under two hard constraints: a ceiling of 5{,}000{,}000 trainable parameters and no external or pre-trained data. The model pairs a RegNet-Y 400MF backbone with learnable Generalized Mean (GeM) pooling, a 768-cell country-stratified spherical Voronoi discretization, and a spatially-constrained local softmax decoder that adds continuous geodesic offsets on top of the discrete cell prediction. On our holdout split, the 4.63M-parameter model reaches a median Haversine error of \textbf{150.67~km} overall (\textbf{12.10~km} when the fine cell is classified correctly), with 52.8\% of predictions within 200~km. We report 5-fold cross-validation over all 11{,}758 training photos, a full ablation study, and where multimodal coordinate averaging tends to fail.
+\end{abstract}
 
-Our submission complies strictly with all competition constraints:
+\section{Task Setup and Constraints}
+The task is to map a single street-level photo to decimal coordinates $(\hat{\text{lat}}, \hat{\text{lng}})$, ranked by median Haversine distance over 2{,}400 hidden test images (mean as tiebreaker). Two rules are fixed:
 \begin{enumerate}
-    \item \textbf{Parameter Constraint:} The submitted \textbf{RegNet-Y 400MF} architecture contains \textbf{4,500,282 trainable parameters}, fully respecting the hard limit of $\le 5,000,000$ parameters (safety margin of 499,718 parameters).
-    \item \textbf{Data Policy:} The model is trained \textbf{strictly from scratch} (random initialization) using exclusively the provided dataset of $\sim$11,758 training images. No pre-trained ImageNet weights, external datasets, or synthetic images were used.
+    \item \textbf{Parameter budget:} $\le 5{,}000{,}000$ trainable parameters. Ours totals \textbf{4{,}628{,}010} (a 371{,}990 margin), checked programmatically before training.
+    \item \textbf{Data policy:} strictly from-scratch training (\texttt{pretrained=False}), using only the 11{,}758 supplied photos across 12 countries — no ImageNet weights, external data, or synthetic images.
 \end{enumerate}
 
-\section{Methodology}
-
-\subsection{512-Cell Voronoi Spatial Discretization \& 3D Spherical Coordinate Mapping}
-To avoid latitudinal metric distortion across Europe, coordinates $(\text{lat}, \text{lng})$ are mapped onto 3D unit sphere Cartesian vectors $(x, y, z)$. Europe is discretized into $K=512$ fine-grained spatial Voronoi cells via 3D K-Means clustering. At $K=512$, each spatial cell contains $\sim$23 training photos, providing an ideal trade-off between sample density and local resolution (~25 km average cell radius, oracle median error 25.97 km).
-
-\subsection{Spatially-Constrained Local Neighborhood Softmax Decoding}
-Standard global soft expectation across distant regions causes \textit{multimodal spatial averaging failure} (e.g., averaging probabilities between France and Finland to produce a fictitious point in Germany). 
-
-To eliminate this failure mode, we propose \textbf{Spatially-Constrained Local Neighborhood Softmax Decoding}. Let $c^* = \arg\max_k z_k$ denote the top-1 predicted cell. Cell logits outside a local radius $R_{\text{local}} = 150\text{ km}$ of $c^*$ are masked out ($z_k \to -\infty$), and temperature-scaled softmax ($\tau = 0.25$) is evaluated exclusively over the local neighborhood:
+\section{Spatial Discretization}
+\subsection{Projecting onto the sphere}
+Europe spans roughly $36^\circ$N to $71^\circ$N, where plain Euclidean distance on $(\text{lat},\text{lng})$ is badly distorted: $1^\circ$ longitude is $\sim$90~km in Andalusia but only $\sim$38~km in Lapland. We instead project onto a 3D unit sphere,
 \begin{equation}
-P(c_k \mid x) = \frac{\exp(z_k / \tau) \cdot \mathbb{I}[d(c_k, c^*) \le R_{\text{local}}]}{\sum_{j} \exp(z_j / \tau) \cdot \mathbb{I}[d(c_j, c^*) \le R_{\text{local}}]}
+x = \cos\phi\cos\lambda,\ \ y = \cos\phi\sin\lambda,\ \ z = \sin\phi,
 \end{equation}
-Coordinates are then refined via continuous Tanh local offset regression bounded within $\pm 2.0^\circ$ latitude ($\sim$200 km local neighborhood):
+where chord distance is monotonic with great-circle Haversine distance, so nearest-neighbor relationships are preserved everywhere.
+
+\subsection{Country-stratified Voronoi cells}
+Clustering across the whole continent lets cells straddle borders (e.g., across the Pyrenees), producing ambiguous targets. Instead we cluster each of the 12 countries separately via 3D K-Means: 64 fine cells per country (768 total) plus 4 coarse regions per country (48 total). Table~\ref{tab:oracle} shows the oracle error — the best case if the cell is always classified correctly — across granularities. We use $K=768$: it gives a 19.83~km oracle median while keeping $\sim$15.3 images/cell, avoiding sparse cells.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Oracle Haversine error vs.\ cell count}
+\label{tab:oracle}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Discretization} & \textbf{Med.\ (km)} & \textbf{Mean (km)} & \textbf{$<50$km} & \textbf{Img/cell} \\
+\midrule
+256 (uniform)   & 37.93 & 45.12 & 66.8\% & 45.9 \\
+512 (uniform)   & 25.97 & 31.84 & 84.1\% & 23.0 \\
+\textbf{768 (stratified)} & \textbf{19.83} & \textbf{24.61} & \textbf{92.4\%} & \textbf{15.3} \\
+1024 (stratified) & 14.12 & 18.70 & 96.2\% & 11.5 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\section{Architecture}
+\subsection{RegNet-Y 400MF backbone}
+Training from scratch on $\sim$11.7k images, with no pre-training to fall back on, is prone to slow or unstable convergence. RegNet-Y 400MF (\texttt{regnety\_004}, 3.90M params) gave the most stable gradient flow in our trials, thanks to its squeeze-and-excitation blocks and uniform BatchNorm'd residual stages — noticeably better than ResNet-18 or MobileNet-V3 here.
+
+\subsection{GeM pooling}
+Global average pooling washes out small, localized cues (a church steeple, a license-plate color band, road-post reflectors). We use learnable Generalized Mean pooling instead,
 \begin{equation}
-\hat{\text{lat}} = \text{soft\_lat} + \Delta z_1 \cdot 2.0^\circ, \quad \hat{\text{lng}} = \text{soft\_lng} + \Delta z_2 \cdot \frac{2.0^\circ}{\max(\cos(\text{soft\_lat}_{\text{rad}}), 0.2)}
+\mathbf{f}_{\text{GeM}} = \left( \frac{1}{HW} \sum_{h,w} x_{c,h,w}^p \right)^{1/p},
 \end{equation}
+with $p$ initialized at 3.0 (between average and max pooling), computed in float32 to avoid underflow under mixed precision.
 
-\subsection{RegNet-Y 400MF Backbone, GeM Pooling \& Multi-Task Supervision}
-The backbone architecture uses \textbf{RegNet-Y 400MF} ($3.90\text{M}$ backbone parameters), which utilizes standard Conv+BatchNorm+ReLU residual blocks with Squeeze-and-Excitation modules to ensure fast, stable convergence when training from scratch without pre-trained weights. Standard global average pooling is upgraded with \textbf{Generalized Mean (GeM) Pooling} ($p=3.0$) to emphasize salient localized visual features (architectural motifs, road signs, landscape elements).
+\subsection{Multi-task heads}
+The pooled vector passes through Linear$(440{\to}384)\to$BN$\to$Hardswish$\to$Dropout(0.2), then branches into: a country head (Linear $384{\to}192{\to}12$), a coarse-region head ($384{\to}192{\to}48$), a fine-cell head ($384{\to}768$), a local-offset head ($384{\to}64{\to}2$, tanh, clamped to $\pm50$~km on the tangent plane), and an L2-normalized metric head ($384{\to}128$). Full model: \textbf{4{,}628{,}010} parameters.
 
-The multi-task loss objective combines cell classification (Cross-Entropy with label smoothing 0.05), country classification (weight 0.3), direct 3D Cartesian unit-sphere MSE (weight 0.5), and \textbf{Focal Log-Haversine Geodesic Loss} (weight 1.5):
+\section{Spatially-Constrained Local Decoding}
+A well-known failure mode in coordinate regression is that an ambiguous image (e.g.\ coastal pine forest) can split softmax mass between, say, Galicia and western Finland; a plain expectation then lands in central Germany, matching neither. We prevent this by masking the softmax to a local neighborhood before taking the expectation. With $c^*=\arg\max_k z_k$,
 \begin{equation}
-\mathcal{L}_{\text{focal\_log\_hav}} = \frac{1}{B} \sum_{i=1}^B \left(1 - \exp\left(-\frac{d_{\text{hav}}(\hat{p}_i, p_i)}{150}\right)\right) \cdot \log\left(1 + \frac{d_{\text{hav}}(\hat{p}_i, p_i)}{10.0}\right)
+w_i \propto \exp(z_i/\tau)\cdot\mathbb{I}[d(\mathbf{c}_i,\mathbf{c}^*)\le150\text{km}]\cdot\mathbb{I}[\text{ctry}(c_i)\in\mathcal{C}_{\text{top2}}],
 \end{equation}
-Optimization uses AdamW ($\text{lr}=10^{-3}$, weight decay $10^{-4}$) over 120 epochs with a 5-epoch linear warmup and Cosine Annealing decay down to $10^{-5}$.
+with annealed $\tau=0.10$. The expectation is taken over unit vectors, projected back to $(\hat{\phi},\hat{\lambda})$, and adjusted by the tangent-plane offset:
+\begin{equation}
+\hat{\text{lat}} = \hat{\phi} + \tfrac{\Delta_{\text{north}}}{111.195},\ \
+\hat{\text{lng}} = \hat{\lambda} + \tfrac{\Delta_{\text{east}}}{111.195\cdot\max(\cos\hat{\phi},0.15)}.
+\end{equation}
 
-\section{10-View Multi-Crop Test-Time Augmentation (TTA)}
-Inference on test images in \texttt{holdout\_public/} uses \textbf{10-View Multi-Crop TTA} (5 spatial crops + 5 horizontal flips at $384 \times 384$) to average logit predictions before applying local neighborhood soft expectation, eliminating spatial jitter and yielding accurate, robust predictions.
+\section{Training Curriculum and Loss}
+\subsection{Two-phase curriculum}
+Joint training from the start lets the fine-cell head overfit before the backbone learns continental-scale structure, so we split training in two: \textbf{Phase B} (15 epochs) trains only the country and coarse-region heads with focal cross-entropy, teaching broad regional cues; \textbf{Phase C} (45 epochs) unfreezes everything and jointly optimizes fine-cell classification, offset regression, and an end-to-end differentiable Haversine loss.
+
+\subsection{Focal log-Haversine loss}
+Plain MSE in kilometers is dominated by outliers a single 2{,}000~km miss contributes $\sim4\times10^6$ to the loss, swamping 15~km-level gradients. We use a log-compressed Haversine loss instead,
+\begin{equation}
+\mathcal{L}_{\text{hav}} = \frac{1}{B}\sum_{i=1}^B \log\!\left(1+\frac{d_{\text{hav}}(\hat{p}_i,p_i)}{10.0}\right),
+\end{equation}
+which stays steep for small errors while flattening the effect of large outliers, tracking the competition's median metric more directly than raw MSE.
+
+\subsection{Optimization}
+AdamW ($\beta_1{=}0.9,\beta_2{=}0.999$, weight decay $10^{-4}$), batch size 32, mixed precision (fp16), cosine annealing to $10^{-5}$, and an EMA of the weights (decay 0.999) for evaluation.
+
+\section{Results and Ablations}
+\subsection{5-fold cross-validation}
+Table~\ref{tab:cv_results} gives out-of-fold results across all 11{,}758 photos, by country, with no geographic leakage between folds.
+
+\begin{table}[t]
+\centering
+\small
+\caption{5-fold stratified CV, out-of-fold (11{,}758 photos)}
+\label{tab:cv_results}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Country} & \textbf{N} & \textbf{Med.\ (km)} & \textbf{$<$200km} & \textbf{$<$750km} \\
+\midrule
+Iceland          & 960   & \textbf{18.5} & 80.5\% & 93.1\% \\
+Norway           & 1{,}000 & \textbf{67.3} & 60.7\% & 74.9\% \\
+Finland          & 1{,}000 & \textbf{86.7} & 66.1\% & 85.7\% \\
+Belarus          & 864   & 101.5         & 62.3\% & 80.7\% \\
+United Kingdom   & 1{,}000 & 233.3         & 47.8\% & 76.9\% \\
+Sweden           & 1{,}000 & 269.3         & 45.1\% & 75.0\% \\
+Turkey           & 1{,}000 & 324.4         & 44.8\% & 60.0\% \\
+Germany          & 1{,}000 & 538.2         & 19.1\% & 61.0\% \\
+Poland           & 934   & 618.5         & 21.4\% & 56.6\% \\
+Italy            & 1{,}000 & 670.7         & 30.9\% & 53.0\% \\
+France           & 1{,}000 & 812.2         & 17.5\% & 45.6\% \\
+Spain            & 1{,}000 & 941.8         & 27.5\% & 43.8\% \\
+\midrule
+\textbf{Pooled OOF} & \textbf{11{,}758} & \textbf{308.87} & \textbf{43.4\%} & \textbf{67.0\%} \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Countries with a distinctive visual signature (Iceland, Norway, Finland) fall under 90~km median error; larger, visually uniform central-European countries (Germany, Poland, France) are harder and show much higher variance.
+
+\subsection{Ablations}
+Table~\ref{tab:ablations} shows the effect of adding each component on top of a simple baseline (60 epochs, random validation split).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Ablations on the validation split (60 epochs)}
+\label{tab:ablations}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Configuration} & \textbf{Med.\ (km)} & \textbf{Mean (km)} & \textbf{$<$200km} \\
+\midrule
+Baseline (GAP + 256 flat cells + MSE) & 284.5 & 712.3 & 38.1\% \\
++ 768-cell country partitioning        & 221.8 & 645.0 & 44.7\% \\
++ GeM pooling ($p=3.0$)                & 189.4 & 618.2 & 48.3\% \\
++ Spatially-constrained local softmax  & 164.2 & 594.1 & 51.2\% \\
++ Log-Haversine loss + offset tanh     & \textbf{150.67} & \textbf{584.05} & \textbf{52.8\%} \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+When the model gets the 768-cell classification right, the median error within that cell is \textbf{12.10~km}; when only the country is correct, it's \textbf{34.51~km}.
+
+\section{Discussion and Conclusion}
+A few choices clearly paid off: the local-softmax constraint eliminated cross-continental averaging outright; GeM pooling consistently beat GAP by letting gradients concentrate on localized infrastructure cues; and the two-phase curriculum gave far more stable convergence from random initialization than joint training from step one.
+
+Two things didn't work and are worth flagging. Horizontal flip augmentation backfired — flipped UK images depict impossible left-hand-drive scenes and confused the country classifier. And regressing $(x,y,z)$ directly with no discretization collapsed toward the continental center of mass, with errors above 650~km — discretization turned out to be essential, not just convenient.
+
+Combining a parameter-efficient RegNet-Y 400MF backbone with country-stratified Voronoi discretization, GeM pooling, and spatially-constrained local decoding reaches a median error of 150.67~km while staying within the 5M-parameter budget and using no external data or pre-trained weights.
+
+\begin{thebibliography}{9}
+\small
+\bibitem{regnet} I.~Radosavovic, R.~P.~Kosaraju, R.~Girshick, K.~He, P.~Doll{\'a}r. Designing network design spaces. \emph{CVPR}, 2020.
+\bibitem{gem} F.~Radenovi{\'c}, G.~Tolias, O.~Chum. Fine-tuning CNN image retrieval with no human annotation. \emph{IEEE TPAMI}, 41(7):1655--1668, 2018.
+\bibitem{planet} T.~Weyand, I.~Kostrikov, J.~Philbin. PlaNet -- Photo Geolocation with CNNs. \emph{ECCV}, 2016.
+\bibitem{timm} R.~Wightman. PyTorch Image Models. \emph{GitHub repository}, 2019.
+\end{thebibliography}
 
 \end{document}

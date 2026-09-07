@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-Single Master Entrypoint for the Image Geolocation Challenge Pipeline.
+Master Entrypoint for the European Image Geolocation Challenge Pipeline.
+
+Why a single runner script?
+Rather than requiring reviewers to remember complex module paths, flags, and arguments,
+run.py provides a centralized CLI that orchestrates the entire machine learning lifecycle:
+1. Environment and sanity checks (parameter budget & 23 unit tests).
+2. Spatial dataset splits & oracle theoretical bounds analysis.
+3. Two-phase curriculum training (Country warm-up -> Joint localization).
+4. Validation scoring & decoder temperature tuning.
+5. Holdout test set predictions (2,400 rows).
+6. Dual 13-point submission audits (experiments folder & project root).
 
 Usage:
-  # 1. Run entire end-to-end pipeline (Tests -> Splits -> Train A/B/C -> Eval -> Predict -> Audit):
-  python run.py --all
-
-  # 2. Or run individual stages:
-  python run.py --test        # Run 22 unit tests and parameter limit verification
-  python run.py --split       # Generate persistent spatial/random split manifests
-  python run.py --oracle      # Compute oracle bounds and feasibility diagnostics
-  python run.py --train       # Execute 3-phase training curriculum (Phases A, B, C)
-  python run.py --eval        # Evaluate best checkpoint on validation split
+  python run.py --all         # Execute full end-to-end workflow sequentially
+  python run.py --test        # Run 23 unit tests and parameter limit verification
+  python run.py --train       # Execute standard training curriculum (Phases B & C)
+  python run.py --eval        # Evaluate model checkpoint on validation set
   python run.py --predict     # Generate holdout predictions (2,400 rows)
   python run.py --validate    # Run strict 13-point read-only submission audit
 """
@@ -226,7 +231,10 @@ def run_all_pipeline(split_type: str = "random", exp_dir: str = "experiments/exp
         src_f = os.path.join(exp_dir, fname)
         dst_f = os.path.join(SCRIPT_DIR, fname)
         if os.path.exists(src_f):
-            shutil.copy2(src_f, dst_f)
+            try:
+                shutil.copy2(src_f, dst_f)
+            except shutil.SameFileError:
+                pass
             print(f"✓ Synchronized {fname} to project root: {dst_f}")
     print("=" * 80)
 

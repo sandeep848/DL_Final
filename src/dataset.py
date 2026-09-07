@@ -29,9 +29,17 @@ KM_PER_DEG_LAT = 111.195  # approximate km per degree latitude
 # ------------------------------------------------------------------------------
 # 1. Geographic Coordinate Mathematics & Numerical Stability
 # ------------------------------------------------------------------------------
+# Why 3D Cartesian coordinates (x, y, z) on the unit sphere?
+# European geography spans from southern Spain (~36°N) to northern Scandinavia (~70°N).
+# Lines of longitude converge significantly at high latitudes: 1° of longitude represents 
+# ~90 km in Andalusia, but only ~38 km in Lapland. If we computed K-Means or Euclidean distances 
+# directly on (lat, lng) degree pairs, the spatial clusters would be stretched and heavily distorted.
+# Projecting (lat, lng) onto unit sphere Cartesian vectors (x, y, z) ensures that straight-line 
+# Euclidean chord distance in R^3 is strictly monotonic with Great Circle / Haversine distance, 
+# yielding isotropic, geographically uniform Voronoi cells across all 12 countries.
 
 def coords_to_3d(lat_deg: Union[float, np.ndarray], lng_deg: Union[float, np.ndarray]) -> np.ndarray:
-    """Converts lat/lng in degrees to 3D unit sphere Cartesian coordinates (x, y, z)."""
+    """Converts lat/lng in decimal degrees to 3D unit sphere Cartesian coordinates (x, y, z)."""
     lat_rad = np.radians(lat_deg)
     lng_rad = np.radians(lng_deg)
     x = np.cos(lat_rad) * np.cos(lng_rad)
@@ -42,7 +50,10 @@ def coords_to_3d(lat_deg: Union[float, np.ndarray], lng_deg: Union[float, np.nda
     return np.array([x, y, z], dtype=np.float32)
 
 def cartesian_to_latlng(xyz: np.ndarray) -> np.ndarray:
-    """Converts 3D Cartesian coordinates (x, y, z) back to lat/lng in decimal degrees."""
+    """
+    Converts 3D Cartesian coordinates (x, y, z) back to lat/lng in decimal degrees.
+    Safe against numerical drift outside the [-1, 1] interval before calling arcsin.
+    """
     norm = np.linalg.norm(xyz, axis=-1, keepdims=True)
     xyz_norm = xyz / np.maximum(norm, 1e-8)
     if xyz_norm.ndim == 1:
@@ -227,10 +238,18 @@ def build_geographic_hierarchy(
     manifest_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Builds a country-aware geographic hierarchy using strictly training samples:
-    - Each fine cell belongs to exactly one country and one coarse region.
-    - Default: 384 fine cells (32 per country) and 48 coarse regions (4 per country).
-    - Centroids are computed in 3D spherical space via K-Means and converted back to lat/lng.
+    Builds a hierarchical spatial discretization using strictly training data.
+    
+    Why country-stratified clustering?
+    If we clustered all European coordinates together without country boundaries, Voronoi cells 
+    would inevitably straddle borders (e.g., a single cell covering parts of eastern France and 
+    southwestern Germany). This creates ambiguous multi-label targets and confuses the country classifier.
+    
+    Instead, we cluster each country's coordinates independently:
+    - Each fine cell belongs strictly to 1 country and 1 coarse region.
+    - K-Means is fitted in 3D Cartesian coordinates (x, y, z) on the unit sphere to avoid 
+      latitudinal distortion.
+    - Cluster centroids are projected back to decimal degrees (lat, lng).
     """
     num_countries = len(COUNTRIES)
     assert num_fine_cells % num_countries == 0, f"num_fine_cells ({num_fine_cells}) must be divisible by {num_countries}"

@@ -1,0 +1,98 @@
+{
+  "num_folds_evaluated": 5,
+  "total_oof_samples": 11758,
+  "median_haversine_km": 308.87,
+  "mean_haversine_km": 689.33,
+  "pct_lt_200km": 43.43,
+  "pct_lt_750km": 67.01,
+  "pct_lt_100km": 35.87,
+  "pct_lt_50km": 29.17,
+  "pct_lt_25km": 21.93,
+  "pct_lt_10km": 11.32,
+  "per_country": {
+    "Belarus": {
+      "count": 864,
+      "median_km": 101.49,
+      "mean_km": 451.3,
+      "pct_lt_200km": 62.3,
+      "pct_lt_750km": 80.7
+    },
+    "Finland": {
+      "count": 1000,
+      "median_km": 86.74,
+      "mean_km": 340.98,
+      "pct_lt_200km": 66.1,
+      "pct_lt_750km": 85.7
+    },
+    "France": {
+      "count": 1000,
+      "median_km": 812.16,
+      "mean_km": 935.92,
+      "pct_lt_200km": 17.5,
+      "pct_lt_750km": 45.6
+    },
+    "Germany": {
+      "count": 1000,
+      "median_km": 538.19,
+      "mean_km": 743.55,
+      "pct_lt_200km": 19.1,
+      "pct_lt_750km": 61.0
+    },
+    "Iceland": {
+      "count": 960,
+      "median_km": 18.54,
+      "mean_km": 252.07,
+      "pct_lt_200km": 80.5,
+      "pct_lt_750km": 93.1
+    },
+    "Italy": {
+      "count": 1000,
+      "median_km": 670.7,
+      "mean_km": 857.92,
+      "pct_lt_200km": 30.9,
+      "pct_lt_750km": 53.0
+    },
+    "Norway": {
+      "count": 1000,
+      "median_km": 67.28,
+      "mean_km": 520.17,
+      "pct_lt_200km": 60.7,
+      "pct_lt_750km": 74.9
+    },
+    "Poland": {
+      "count": 934,
+      "median_km": 618.47,
+      "mean_km": 800.74,
+      "pct_lt_200km": 21.4,
+      "pct_lt_750km": 56.6
+    },
+    "Spain": {
+      "count": 1000,
+      "median_km": 941.82,
+      "mean_km": 1267.49,
+      "pct_lt_200km": 27.5,
+      "pct_lt_750km": 43.8
+    },
+    "Sweden": {
+      "count": 1000,
+      "median_km": 269.28,
+      "mean_km": 516.2,
+      "pct_lt_200km": 45.1,
+      "pct_lt_750km": 75.0
+    },
+    "Turkey": {
+      "count": 1000,
+      "median_km": 324.37,
+      "mean_km": 1023.07,
+      "pct_lt_200km": 44.8,
+      "pct_lt_750km": 60.0
+    },
+    "United_Kingdom": {
+      "count": 1000,
+      "median_km": 233.27,
+      "mean_km": 520.06,
+      "pct_lt_200km": 47.8,
+      "pct_lt_750km": 76.9
+    }
+  }
+}

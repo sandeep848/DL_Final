@@ -50,16 +50,18 @@ def aggregate_retrieval_candidates(
     temp: float = 10.0
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Performs exact cosine retrieval for query embeddings against training database:
-    1. Restricts search space to training images from model's top 1 or 2 predicted countries.
-    2. Retrieves top_k most similar neighbors.
-    3. Aggregates coordinates on the 3D unit sphere using softmax similarity weights,
-       or selects geographic medoid minimizing weighted distance.
-    query_embed: (B, D) L2-normalized
-    train_embeds: (N, D) L2-normalized
-    train_coords: (N, 2) in decimal degrees
-    train_countries: (N,) int
-    predicted_country_logits: (B, 12)
+    Performs cosine similarity retrieval against the training embeddings database.
+
+    Why country-gated retrieval?
+    Standard global k-NN retrieval across ~9,400 images frequently suffers from "visual false friends":
+    for example, a generic motorway barrier in Poland might have high visual cosine similarity to a 
+    motorway barrier in central Spain. If we retrieved globally, these false friends would pull 
+    predictions across the entire continent.
+    
+    By restricting candidate neighbors to the model's top 1 or 2 predicted countries:
+    - We eliminate cross-continental leaps.
+    - We still allow smooth transitions near national borders (e.g., France/Germany border roads).
+    - Coordinates are then aggregated on the 3D unit sphere via similarity softmax or geographic medoid.
     """
     B = query_embed.size(0)
     device = query_embed.device
