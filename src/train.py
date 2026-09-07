@@ -1050,11 +1050,9 @@ def main():
                     best_model, images,
                     centroids_3d_tensor, centroids_latlng_tensor,
                     fine_to_country_tensor, cfg,
-                    fine_to_coarse_tensor=fine_to_coarse_tensor,
                     retrieval_db=retrieval_db,
                     mode="blended",
-                    device=device,
-                    return_branches=False
+                    device=device
                 )
                 val_pred_lats.extend(p_lat.tolist())
                 val_pred_lngs.extend(p_lng.tolist())
