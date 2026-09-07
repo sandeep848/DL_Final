@@ -102,10 +102,10 @@ class GeolocationConfig:
     loss_weight_coarse: float = 2.0
     loss_weight_fine: float = 2.0
     loss_weight_metric: float = 0.5
-    loss_weight_offset: float = 1.0
+    loss_weight_offset: float = 0.0      # Disable standalone offset supervision (trains on true centroid)
     loss_weight_cartesian: float = 0.5
-    loss_weight_haversine: float = 0.5
-    haversine_warmup_epochs: int = 2
+    loss_weight_haversine: float = 2.0   # End-to-end supervision applies offset to soft centroid (matching inference)
+    haversine_warmup_epochs: int = 0     # Start end-to-end offset training immediately
     
     # Decoding temperature schedule during training
     initial_train_temp: float = 0.5  # Soft initial temperature
@@ -114,14 +114,15 @@ class GeolocationConfig:
     # --- Inference & Decoding ---
     decoder_temperature: float = 0.10
     cell_top_k: int = 4
-    country_logit_weight: float = 3.0
-    neighborhood_radius_km: float = 150.0
-    decoder_country_top_k: int = 2   # Allow candidate cells from top-2 countries in spatial neighborhood
+    country_logit_weight: float = 0.1    # Break the country cascade failure
+    neighborhood_radius_km: float = 400.0 # Expand search to prevent cutting off true cells near borders
+    decoder_country_top_k: int = 3       # Allow candidate cells from top-3 countries
     
     # Retrieval decoder settings
     retrieval_k: int = 20
     retrieval_country_top_k: int = 2
-    retrieval_blend_alpha: float = 0.65  # alpha * cell_pred + (1 - alpha) * retrieval_pred
+    retrieval_blend_alpha: float = 1.0   # Set to 1.0 to disable retrieval blending (cell-only is better: 116km)
+    retrieval_sim_threshold: float = 0.55
     use_geographic_medoid: bool = False  # Spherical mean vs geographic medoid
     
     # Test-Time Augmentation (TTA)

@@ -134,6 +134,12 @@ def stage_cv(phase: str = "C", epochs: int = 20, mode: str = "blended", exp_dir:
 
     # 3. Train all 5 folds
     for f in range(5):
+        # Skip if completely trained and val predictions generated
+        fold_dir = os.path.join(exp_dir, f"fold_{f}")
+        if os.path.exists(os.path.join(fold_dir, "best_model.pth")) and os.path.exists(os.path.join(fold_dir, "val_predictions.csv")):
+            print(f"Skipping Fold {f} (already fully trained and evaluated)")
+            continue
+
         print_banner(f"Train Fold {f}/5 ({epochs} Epochs, Phase {phase})", 3, TOTAL_STAGES)
         run_cmd([
             PYTHON_EXE, os.path.join(SRC_DIR, "train.py"),

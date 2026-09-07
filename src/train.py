@@ -741,6 +741,7 @@ def main():
     centroids_3d_tensor = torch.tensor(coords_to_3d(fine_centroids[:, 0], fine_centroids[:, 1]), dtype=torch.float32, device=device)
     centroids_latlng_tensor = torch.tensor(fine_centroids, dtype=torch.float32, device=device)
     fine_to_country_tensor = torch.tensor(fine_to_country, dtype=torch.long, device=device)
+    fine_to_coarse_tensor = torch.tensor(fine_to_coarse, dtype=torch.long, device=device) if fine_to_coarse is not None else None
 
     # 3. Model Construction (Strictly pretrained=False, <= 5M params)
     model = get_model(
@@ -1028,37 +1029,44 @@ def main():
             retrieval_db_path, device=device, image_size=cfg.image_size, batch_size=cfg.batch_size
         )
 
-        # 5. Generate and Save Out-of-Fold Validation Predictions
-        print(f"\nGenerating validation predictions using best checkpoint...")
+        # 5. Generate and Save Out-of-Fold Validation Predictions (Blended Retrieval)
+        print(f"\nGenerating validation predictions using best checkpoint + blended retrieval...")
         best_model.eval()
-        val_pred_lats, val_pred_lngs = [], []
+
+        # Load retrieval database that was just built above
+        raw_db = torch.load(retrieval_db_path, map_location=device, weights_only=False)
+        retrieval_db = {
+            "embeddings": torch.tensor(raw_db["embeddings"], dtype=torch.float32, device=device),
+            "coords":     torch.tensor(raw_db["coords"],     dtype=torch.float32, device=device),
+            "countries":  torch.tensor(raw_db["countries"],  dtype=torch.long,    device=device),
+        }
+        print(f"  Loaded {len(retrieval_db['embeddings']):,} training retrieval embeddings.")
+
+        from evaluate import decode_batch
+        val_pred_lats, val_pred_lngs, val_pred_errs = [], [], []
         with torch.no_grad():
-            for images, _, _, _, _, _ in tqdm(val_loader, desc="Validating", leave=False):
-                images = images.to(device)
-                cell_logits, _, country_logits, pred_offset, _, _ = best_model(images)
-                p_lats, p_lngs = decode_coordinates_spherical(
-                    cell_logits,
+            for images, targets_coords, cell_idx, coarse_idx, country_idx, _ in tqdm(val_loader, desc="Val Predict (blended)", leave=False):
+                p_lat, p_lng, _, _, _ = decode_batch(
+                    best_model, images,
                     centroids_3d_tensor, centroids_latlng_tensor,
-                    pred_offset,
-                    country_logits=country_logits,
-                    fine_to_country=fine_to_country_tensor,
-                    top_k=cfg.cell_top_k,
-                    temperature=cfg.decoder_temperature,
-                    max_offset_km=cfg.max_offset_km,
-                    country_weight=cfg.country_logit_weight,
-                    local_neighborhood_km=cfg.neighborhood_radius_km,
-                    country_top_k=cfg.decoder_country_top_k
+                    fine_to_country_tensor, cfg,
+                    fine_to_coarse_tensor=fine_to_coarse_tensor,
+                    retrieval_db=retrieval_db,
+                    mode="blended",
+                    device=device,
+                    return_branches=False
                 )
-                val_pred_lats.extend(p_lats.cpu().numpy().tolist())
-                val_pred_lngs.extend(p_lngs.cpu().numpy().tolist())
+                val_pred_lats.extend(p_lat.tolist())
+                val_pred_lngs.extend(p_lng.tolist())
+                t_lat = targets_coords[:, 0].numpy()
+                t_lng = targets_coords[:, 1].numpy()
+                for pl, pln, tl, tln in zip(p_lat, p_lng, t_lat, t_lng):
+                    val_pred_errs.append(haversine_km(float(pl), float(pln), float(tl), float(tln)))
 
         val_out_df = val_df.copy()
         val_out_df['pred_lat'] = val_pred_lats
         val_out_df['pred_lng'] = val_pred_lngs
-        val_out_df['error_km'] = [
-            haversine_km(plat, plng, tlat, tlng)
-            for plat, plng, tlat, tlng in zip(val_pred_lats, val_pred_lngs, val_df['lat'].values, val_df['lng'].values)
-        ]
+        val_out_df['error_km'] = val_pred_errs
         val_preds_path = os.path.join(target_exp_dir, "val_predictions.csv")
         val_out_df.to_csv(val_preds_path, index=False)
         med_err = float(val_out_df['error_km'].median())
