@@ -52,8 +52,8 @@ The network combines country and hierarchical cell classification with a bounded
 ## Installation
 
 ~~~bash
-git clone https://github.com/sandeep848/DL_Final.git
-cd DL_Final
+git clone https://github.com/sandeep848/european-image-geolocation.git
+cd european-image-geolocation
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
